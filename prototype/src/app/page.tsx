@@ -1,103 +1,137 @@
-import Image from "next/image";
+import Link from "next/link";
+import { listGroups, parseId, viewGroup } from "@/lib/groups";
+import { formatMoney, InputError } from "@/lib/money";
+import { createGroupAction, updateGroupAction } from "./actions";
+import { EntryForm } from "./forms";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ group?: string | string[] }>;
+}) {
+  const [{ group: selected }, groups] = await Promise.all([searchParams, listGroups()]);
+  let groupId: number | undefined = groups[0]?.id;
+  if (selected !== undefined) {
+    try {
+      groupId = parseId(typeof selected === "string" ? selected : null, "group");
+    } catch (error) {
+      if (!(error instanceof InputError)) throw error;
+      groupId = undefined;
+    }
+  }
+  const detail = groupId ? await viewGroup(groupId) : null;
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <main className="workspace">
+      <header className="masthead">
+        <h1>SplitSmart</h1>
+        <p>Shared expenses and balances</p>
+      </header>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+      <aside className="panel">
+        <h2>Groups</h2>
+        {groups.length > 0 && (
+          <nav aria-label="Expense groups">
+            {groups.map((group) => (
+              <Link key={group.id} href={`/?group=${group.id}`}
+                aria-current={group.id === detail?.group.id ? "page" : undefined}>
+                {group.name}
+              </Link>
+            ))}
+          </nav>
+        )}
+        <EntryForm action={createGroupAction} button="Create group">
+          <label>Group name<input name="name" required maxLength={80} /></label>
+        </EntryForm>
+      </aside>
+
+      {detail ? <GroupDetail key={detail.group.id} detail={detail} /> : (
+        <section className="panel">
+          <h2>{selected === undefined ? "Create your first group" : "Group unavailable"}</h2>
+          <p>{selected === undefined ? "Start by naming the group that will share expenses." : "Choose an existing group or create a new one."}</p>
+        </section>
+      )}
+    </main>
+  );
+}
+
+function GroupDetail({ detail }: { detail: NonNullable<Awaited<ReturnType<typeof viewGroup>>> }) {
+  const { id, name, members, expenses } = detail.group;
+  return (
+    <article className="group-detail">
+      <h2 className="group-title">{name}</h2>
+      <section className="panel">
+        <h3>Members and balances</h3>
+        {!members.length && <p>Add a member to start recording expenses.</p>}
+        {members.length > 0 && (
+          <ul className="ledger">
+            {members.map((member) => {
+              const balance = detail.balances.get(member.id)!;
+              return (
+                <li key={member.id}>
+                  <span>{member.name}</span>
+                  <strong>{balance > 0 ? "Gets back " : balance < 0 ? "Owes " : "Settled · "}
+                    {formatMoney(balance < 0 ? -balance : balance)}
+                  </strong>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <EntryForm action={updateGroupAction} button="Add member">
+          <input type="hidden" name="groupId" value={id} />
+          <input type="hidden" name="intent" value="addMember" />
+          <label>Member name<input name="name" required maxLength={80} /></label>
+        </EntryForm>
+      </section>
+      {members.length > 0 && (
+        <section className="panel">
+          <h3>Record an expense</h3>
+          <EntryForm action={updateGroupAction} button="Save expense">
+            <input type="hidden" name="groupId" value={id} />
+            <input type="hidden" name="intent" value="recordExpense" />
+            <label>Description<input name="description" required maxLength={200} /></label>
+            <label>Amount (USD)<input name="amount" inputMode="decimal" placeholder="0.00" required /></label>
+            <label>Paid by
+              <select name="payerId" defaultValue="" required>
+                <option value="" disabled>Select a payer</option>
+                {members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+              </select>
+            </label>
+            <fieldset className="participants">
+              <legend>Split equally among</legend>
+              {members.map((member) => (
+                <label key={member.id}>
+                  <input type="checkbox" name="participantIds" value={member.id} />{member.name}
+                </label>
+              ))}
+            </fieldset>
+          </EntryForm>
+        </section>
+      )}
+      <section className="panel">
+        <h3>Expense history</h3>
+        {!expenses.length && <p>No expenses recorded yet.</p>}
+        {expenses.length > 0 && (
+          <ul className="ledger history">
+            {expenses.map((expense) => (
+              <li key={expense.id}>
+                <div className="expense-title"><strong>{expense.description}</strong><strong>{formatMoney(expense.amountCents)}</strong></div>
+                <p>Paid by {expense.payer.name} · <time dateTime={expense.createdAt.toISOString()}>
+                  {expense.createdAt.toLocaleDateString("en-US", { dateStyle: "medium", timeZone: "UTC" })}
+                </time></p>
+                <ul className="shares">
+                  {expense.shares.map((share) => (
+                    <li key={share.memberId}>{share.member.name} · {formatMoney(share.cents)}</li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </article>
   );
 }
